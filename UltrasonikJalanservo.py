@@ -1,73 +1,28 @@
 import time
-import Adafruit_PCA9685
-import Adafruit_Servo
+import Adafruit_PCA9685  # Pastikan sudah terinstal dengan pip
+import RPi.GPIO as GPIO
 
 # Buat objek PCA9685
 pca = Adafruit_PCA9685.PCA9685()
 
-# Atur frekuensi PCA9685
-pca.set_pwm_freq(60)  # Frekuensi 60Hz
+# Atur frekuensi PCA9685 untuk servos
+pca.set_pwm_freq(60)  # Frekuensi 60Hz cocok untuk servos
 
-# Buat objek servo untuk setiap kaki
-servo1_1 = Adafruit_Servo.PWM(pca.get_channel(0))
-servo1_2 = Adafruit_Servo.PWM(pca.get_channel(1))
-servo1_3 = Adafruit_Servo.PWM(pca.get_channel(2))
+# Fungsi untuk menghitung nilai PWM berdasarkan sudut servo
+def servo_pulse(angle):
+    pulse_length = 4096    # 12-bit resolution
+    pulse = int((angle * 2.275 + 102) / 1000000 * 60 * pulse_length)
+    return pulse
 
-servo2_1 = Adafruit_Servo.PWM(pca.get_channel(3))
-servo2_2 = Adafruit_Servo.PWM(pca.get_channel(4))
-servo2_3 = Adafruit_Servo.PWM(pca.get_channel(5))
+# Mengatur posisi awal servo di setiap channel
+channels = list(range(18))
+initial_angle = 90
+for channel in channels:
+    pca.set_pwm(channel, 0, servo_pulse(initial_angle))
 
-servo3_1 = Adafruit_Servo.PWM(pca.get_channel(6))
-servo3_2 = Adafruit_Servo.PWM(pca.get_channel(7))
-servo3_3 = Adafruit_Servo.PWM(pca.get_channel(8))
-
-servo4_1 = Adafruit_Servo.PWM(pca.get_channel(9))
-servo4_2 = Adafruit_Servo.PWM(pca.get_channel(10))
-servo4_3 = Adafruit_Servo.PWM(pca.get_channel(11))
-
-servo5_1 = Adafruit_Servo.PWM(pca.get_channel(12))
-servo5_2 = Adafruit_Servo.PWM(pca.get_channel(13))
-servo5_3 = Adafruit_Servo.PWM(pca.get_channel(14))
-
-servo6_1 = Adafruit_Servo.PWM(pca.get_channel(15))
-servo6_2 = Adafruit_Servo.PWM(pca.get_channel(16))
-servo6_3 = Adafruit_Servo.PWM(pca.get_channel(17))
-
-# Atur posisi awal servo
-servo1_1.setAngle(90)
-servo1_2.setAngle(90)
-servo1_3.setAngle(90)
-
-servo2_1.setAngle(90)
-servo2_2.setAngle(90)
-servo2_3.setAngle(90)
-
-servo3_1.setAngle(90)
-servo3_2.setAngle(90)
-servo3_3.setAngle(90)
-
-servo4_1.setAngle(90)
-servo4_2.setAngle(90)
-servo4_3.setAngle(90)
-
-servo5_1.setAngle(90)
-servo5_2.setAngle(90)
-servo5_3.setAngle(90)
-
-servo6_1.setAngle(90)
-servo6_2.setAngle(90)
-servo6_3.setAngle(90)
-
-# Import library ultrasonik
-import RPi.GPIO as GPIO
-import time
-import datetime
-
-# Atur pin GPIO untuk sensor ultrasonik
+# Konfigurasi pin GPIO untuk sensor ultrasonik
 trig = 23
 echo = 24
-
-# Setting pin GPIO
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(trig, GPIO.OUT)
 GPIO.setup(echo, GPIO.IN)
@@ -86,13 +41,20 @@ def get_distance():
     stop_time = time.time()
 
     time_elapsed = stop_time - start_time
-    distance = (time_elapsed * 34300) / 2
+    distance = (time_elapsed * 34300) / 2  # kecepatan suara 34300 cm/s
 
     return distance
 
 # Loop utama
-while True:
-    # Baca jarak dari sensor ultrasonik
-    distance = get_distance()
-
-    # Jika jarak kurang dari 10cm, robot
+try:
+    while True:
+        distance = get_distance()
+        print("Distance:", distance, "cm")
+        if distance < 10:
+            print("Obstacle detected! Stopping or reversing...")
+            for channel in channels:
+                pca.set_pwm(channel, 0, servo_pulse(90))  # Mengatur semua servo ke posisi netral
+        time.sleep(0.1)
+except KeyboardInterrupt:
+    print("Program stopped by User")
+    GPIO.cleanup()  # Membersihkan semua setting GPIO
