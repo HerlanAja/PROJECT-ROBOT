@@ -1,68 +1,101 @@
-import cv2
-import numpy as np
 import RPi.GPIO as GPIO
-import time
+from time import sleep
+import cv2
+import torch
 
-# Inisialisasi GPIO untuk servo
-GPIO.setmode(GPIO.BCM)
-servo_pins = [18, 19, 20]  # Contoh pin untuk servo motor, sesuaikan dengan pengaturan Anda
-servo_objects = []
+# Fungsi untuk mengontrol siku
+def SetElbowAngle(sudut):
+    GPIO.setmode(GPIO.BOARD)
+    GPIO.setup(11, GPIO.OUT)
+    pwm = GPIO.PWM(11, 50)
+    pwm.start(0)
+    tugas = sudut / 18 + 2
+    GPIO.output(11, True)
+    pwm.ChangeDutyCycle(tugas)
+    sleep(2)
+    GPIO.output(11, True)
+    pwm.ChangeDutyCycle(0)
 
-# Inisialisasi servo motor untuk setiap sendi
-for pin in servo_pins:
-    GPIO.setup(pin, GPIO.OUT)
-    servo = GPIO.PWM(pin, 50)  # frekuensi 50Hz
-    servo.start(0)
-    servo_objects.append(servo)
+# Fungsi untuk mengontrol pergelangan tangan (wrist)
+def SetWristAngle(sudut):
+    GPIO.setmode(GPIO.BOARD)
+    GPIO.setup(7, GPIO.OUT)
+    pwm = GPIO.PWM(7, 50)
+    pwm.start(0)
+    tugas = sudut / 18 + 2
+    GPIO.output(7, True)
+    pwm.ChangeDutyCycle(tugas)
+    sleep(2)
+    GPIO.output(7, True)
+    pwm.ChangeDutyCycle(0)
 
-# Fungsi untuk menggerakkan servo ke sudut tertentu
-def move_servo(servo, angle):
-    duty = angle / 18 + 2
-    servo.ChangeDutyCycle(duty)
-    time.sleep(1)
+# Fungsi untuk mengontrol gripper
+def SetGripperAngle(sudut):
+    GPIO.setmode(GPIO.BOARD)
+    GPIO.setup(3, GPIO.OUT)
+    pwm = GPIO.PWM(3, 50)
+    pwm.start(0)
+    tugas = sudut / 18 + 2
+    GPIO.output(3, True)
+    pwm.ChangeDutyCycle(tugas)
+    sleep(2)
+    GPIO.output(3, False)
+    pwm.ChangeDutyCycle(0)
 
-# Fungsi untuk mendeteksi objek menggunakan YOLOv3
-def detect_object(frame):
-    # Lakukan deteksi objek di sini menggunakan YOLOv3
-    # Lalu kembalikan koordinat objek yang terdeteksi
-    # Contoh sederhana:
-    object_coordinates = [(100, 100)]  # Koordinat objek yang dideteksi
-    return object_coordinates
+# Inisialisasi YOLOv5
+model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
 
-# Main program
-if __name__ == "__main__":
-    try:
-        while True:
-            # Ambil frame dari kamera atau video
-            # frame = cv2.VideoCapture().read()
-            
-            # Deteksi objek menggunakan YOLOv3
-            object_coordinates = detect_object(frame)
-            
-            # Jika objek terdeteksi, gerakkan servo ke posisi tertentu
-            if len(object_coordinates) > 0:
-                # Ambil koordinat objek pertama
-                x, y = object_coordinates[0]
-                
-                # Lakukan perhitungan sudut berdasarkan posisi objek
-                # Disesuaikan dengan sudut yang diperlukan untuk menggerakkan servo
-                angle1 = 90  # Sudut yang diperlukan sesuai dengan posisi objek
-                angle2 = 45
-                
-                # Gerakkan servo ke sudut yang diperlukan untuk setiap sendi
-                move_servo(servo_objects[0], angle1)
-                move_servo(servo_objects[1], angle2)
-            
-            # Tampilkan frame dengan kotak deteksi objek
-            cv2.imshow('Frame', frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+# Fungsi deteksi objek menggunakan YOLOv5
+def detect_object(img):
+    results = model(img)
+    labels = results.xyxyn[0][:, -1].cpu().numpy()
+    boxes = results.xyxyn[0][:, :-1].cpu().numpy()
+    return labels, boxes
 
-    except KeyboardInterrupt:
-        pass
+# Inisialisasi kamera
+cap = cv2.VideoCapture(0)
 
-    finally:
-        for servo in servo_objects:
-            servo.stop()
-        GPIO.cleanup()
+try:
+    while True:
+        # Mengambil gambar dari kamera
+        ret, frame = cap.read()
 
+        # Deteksi objek menggunakan YOLOv5
+        labels, boxes = detect_object(frame)
+
+        # Jika objek terdeteksi, kontrol servo gripper
+        if len(labels) > 0:
+            # Bergerak ke posisi awal
+            SetElbowAngle(130)
+            SetWristAngle(70)
+            SetGripperAngle(0)
+
+            # Mengambil objek
+            SetElbowAngle(110)
+            SetGripperAngle(0)
+            SetGripperAngle(130)
+
+            # Bergerak kembali
+            SetElbowAngle(150)
+            SetWristAngle(50)
+
+            # Melepaskan objek
+            SetGripperAngle(130)
+            SetGripperAngle(0)
+
+        # Menampilkan gambar
+        cv2.imshow('Object Detection', frame)
+
+        # Tekan 'q' untuk keluar
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+except KeyboardInterrupt:
+    print("Program dihentikan dengan keyboard")
+
+finally:
+    cap.release()
+    cv2.destroyAllWindows()
+    pwm.stop()
+    GPIO.cleanup()
+    GPIO.setwarnings(False)
